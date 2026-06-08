@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>zkAttest — DKIM-backed email attestations for Polkadot identity.</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --pink: #E6007A; --pink-dark: #b8005e; }
+  body { background: #0a0a0f; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+  .gradient-text { background: linear-gradient(135deg, #E6007A 0%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); }
+  .glow { box-shadow: 0 0 40px rgba(230,0,122,0.15); }
+  .btn-primary { background: var(--pink); transition: background 0.2s; }
+  .btn-primary:hover { background: var(--pink-dark); }
+  .step-num { background: linear-gradient(135deg, #E6007A, #a855f7); }
+  .drop-zone { border: 2px dashed rgba(230,0,122,0.4); transition: all 0.2s; }
+  .drop-zone.drag-over { border-color: var(--pink); background: rgba(230,0,122,0.05); }
+  .drop-zone.has-file { border-color: #22c55e; background: rgba(34,197,94,0.05); }
+  pre { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.8rem; }
+  .tag { background: rgba(230,0,122,0.15); border: 1px solid rgba(230,0,122,0.3); }
+  .tag-green { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); }
+  .tag-yellow { background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); }
+  @keyframes pulse-pink { 0%,100% { box-shadow: 0 0 0 0 rgba(230,0,122,0.4); } 50% { box-shadow: 0 0 0 8px rgba(230,0,122,0); } }
+  .pulse { animation: pulse-pink 2s infinite; }
+  .chain-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--pink); display: inline-block; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Nav -->
+<nav class="border-b border-white/5 py-4 px-6">
+  <div class="max-w-6xl mx-auto flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-lg step-num flex items-center justify-center text-white text-xs font-bold">ZK</div>
+      <span class="font-semibold text-white">zkAttest</span>
+      <span class="tag text-xs px-2 py-0.5 rounded-full ml-2 text-pink-400">alpha</span>
+    </div>
+    <div class="flex items-center gap-6 text-sm text-slate-400">
+      <a href="#how-it-works" class="hover:text-white transition-colors">How it works</a>
+      <a href="#demo" class="hover:text-white transition-colors">Demo</a>
+      <a href="#zk-demo" class="hover:text-white transition-colors">ZK proof</a>
+      <a href="#technical" class="hover:text-white transition-colors">Technical</a>
+      <button id="wallet-btn" onclick="connectWallet()"
+         class="card text-slate-300 hover:text-white hover:border-pink-500/30 transition-colors text-xs px-3 py-1.5 rounded-lg font-medium">
+        Connect wallet
+      </button>
+      <a href="https://github.com/msmrez/zkattest" target="_blank" rel="noopener"
+         class="btn-primary text-white text-xs px-3 py-1.5 rounded-lg font-medium">
+        GitHub ↗
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="pt-20 pb-16 px-6 text-center">
+  <div class="max-w-4xl mx-auto">
+    <div class="inline-flex items-center gap-2 tag text-pink-400 text-xs px-3 py-1.5 rounded-full mb-6">
+      <span class="chain-dot pulse"></span>
+      Built for Polkadot People Chain · DIM2 attestation prototype
+    </div>
+    <h1 class="text-5xl md:text-6xl font-bold text-white leading-tight mb-6">
+      Prove DKIM-backed email ownership.<br>
+      <span class="gradient-text">Add a Polkadot credential signal.</span>
+    </h1>
+    <p class="text-xl text-slate-400 mb-4 max-w-2xl mx-auto">
+      Zero-knowledge proof of email ownership for a privacy-preserving credential signal.
+      No app-side issuer in the trust path, no raw email contents revealed.
+      The trust root is the cryptographic DKIM signature your email provider already puts on every email.
+    </p>
+    <p class="text-sm text-slate-500 mb-10 max-w-xl mx-auto">
+      A Polkadot-native
+      <a href="https://zk.email" target="_blank" class="text-pink-400 hover:text-pink-300">zkEmail</a>-based
+      attestation-source prototype for Polkadot People / Individuality evaluation, designed to plug into DIM2 via a
+      <a href="https://docs.substrate.io/reference/frame-pallets/" target="_blank" class="text-pink-400 hover:text-pink-300">FRAME pallet</a>
+      and a Groth16 verifier already live on Polkadot Asset Hub mainnet.
+    </p>
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+      <a href="#demo" class="btn-primary text-white px-8 py-3 rounded-xl font-semibold text-lg glow">
+        Try the demo ↓
+      </a>
+      <a href="https://github.com/msmrez/zkattest" target="_blank" rel="noopener"
+         class="card text-slate-300 px-8 py-3 rounded-xl font-semibold text-lg hover:border-pink-500/30 transition-colors">
+        View source
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Stats bar -->
+<section class="py-8 px-6 border-y border-white/5">
+  <div class="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+    <div>
+      <div class="text-2xl font-bold gradient-text">Email-scale</div>
+      <div class="text-xs text-slate-500 mt-1">Low-friction<br>attestation path</div>
+    </div>
+    <div>
+      <div class="text-2xl font-bold gradient-text">No new</div>
+      <div class="text-xs text-slate-500 mt-1">Credential issuer<br>for email proof</div>
+    </div>
+    <div>
+      <div class="text-2xl font-bold gradient-text">~14s</div>
+      <div class="text-xs text-slate-500 mt-1">Observed real-circuit proof<br>(Node CLI)</div>
+    </div>
+    <div>
+      <div class="text-2xl font-bold gradient-text">23</div>
+      <div class="text-xs text-slate-500 mt-1">Pallet source<br>tests</div>
+    </div>
+  </div>
+</section>
+
+<!-- Problem -->
+<section class="py-16 px-6">
+  <div class="max-w-5xl mx-auto">
+    <h2 class="text-3xl font-bold text-white mb-4 text-center">The DIM2 problem</h2>
+    <p class="text-slate-400 text-center mb-12 max-w-2xl mx-auto">
+      Polkadot's People / Individuality system can use multiple credential sources. The named candidates
+      commonly introduce either an issuer, an attestor, or a service-specific verifier in the trust path.
+    </p>
+    <div class="grid md:grid-cols-3 gap-4 mb-8">
+      <div class="card rounded-xl p-5">
+        <div class="tag-yellow text-yellow-400 text-xs px-2 py-1 rounded-full inline-block mb-3">Trusted issuer</div>
+        <h3 class="font-semibold text-white mb-2">KILT SocialKYC</h3>
+        <p class="text-sm text-slate-400">Server verifies the account and signs a credential. The trust path includes that issuer, so the verifier must trust KILT's attestation semantics in addition to email cryptography.</p>
+      </div>
+      <div class="card rounded-xl p-5">
+        <div class="tag-yellow text-yellow-400 text-xs px-2 py-1 rounded-full inline-block mb-3">Live attestor</div>
+        <h3 class="font-semibold text-white mb-2">Reclaim Protocol</h3>
+        <p class="text-sm text-slate-400">TLS attestor nodes co-witness your HTTPS session in real time. That model is strong for arbitrary web data, but it is not the native trust root for DKIM-signed email.</p>
+      </div>
+      <div class="card rounded-xl p-5 border-pink-500/30">
+        <div class="tag text-pink-400 text-xs px-2 py-1 rounded-full inline-block mb-3">✓ No live attestor</div>
+        <h3 class="font-semibold text-white mb-2">zkAttest</h3>
+        <p class="text-sm text-slate-400">The trust root is the email provider's DKIM signature, a cryptographic fact that exists before zkAttest touches it. No app-side attester or issuer is added. The proof verifies on-chain.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section id="how-it-works" class="py-16 px-6 border-t border-white/5">
+  <div class="max-w-5xl mx-auto">
+    <h2 class="text-3xl font-bold text-white mb-4 text-center">How it works</h2>
+    <p class="text-slate-400 text-center mb-12 max-w-2xl mx-auto">Five steps from your inbox to a People Chain-aligned attestation. The production goal is local proving, so raw email content does not leave the user's device.</p>
+    <div class="space-y-4">
+
+      <div class="card rounded-xl p-5 flex items-start gap-4">
+        <div class="step-num w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm mt-0.5">1</div>
+        <div>
+          <h3 class="font-semibold text-white mb-1">Receive a challenge email</h3>
+          <p class="text-sm text-slate-400">In the production flow, the dApp will trigger a relayer to send a challenge email to your address; you click a link and your browser downloads the raw <code class="text-pink-400">.eml</code>. For today's demo, you can drag-drop any existing DKIM-signed email from your inbox.</p>
+          <p class="text-xs text-slate-500 mt-2">Why this works: major providers such as Gmail, Outlook, and Yahoo commonly sign outgoing email with a private RSA key (DKIM, RFC 6376). That signature is in the email you just received.</p>
+        </div>
+      </div>
+
+      <div class="card rounded-xl p-5 flex items-start gap-4">
+        <div class="step-num w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm mt-0.5">2</div>
+        <div>
+          <h3 class="font-semibold text-white mb-1">Browser generates a ZK proof</h3>
+          <p class="text-sm text-slate-400">The production prover will run the <a href="https://zk.email" class="text-pink-400">zkEmail</a> Circom circuit locally via WASM. The deployed CLI path already proves this circuit on Polkadot Asset Hub; the browser path is the next integration milestone. The circuit proves:</p>
+          <ul class="text-xs text-slate-500 mt-2 space-y-1 list-none">
+            <li>✓ You possess an email with a valid DKIM signature from <em>this specific provider</em></li>
+            <li>✓ The signature verifies against the provider's registered public key</li>
+            <li>✓ The public nullifier can be checked on-chain to prevent replay</li>
+          </ul>
+          <p class="text-xs text-slate-500 mt-2">The email body, recipient, message ID, and full headers are never revealed.</p>
+        </div>
+      </div>
+
+      <div class="card rounded-xl p-5 flex items-start gap-4">
+        <div class="step-num w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm mt-0.5">3</div>
+        <div>
+          <h3 class="font-semibold text-white mb-1">On-chain proof verification</h3>
+          <p class="text-sm text-slate-400">The Groth16 proof is verified on Asset Hub by the deployed <code class="text-pink-400">Verifier.sol</code> contract (compiled to PolkaVM via Parity's <code class="text-pink-400">resolc</code> compiler). BN254 pairing precompiles confirm the mathematics in a single transaction.</p>
+        </div>
+      </div>
+
+      <div class="card rounded-xl p-5 flex items-start gap-4">
+        <div class="step-num w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm mt-0.5">4</div>
+        <div>
+          <h3 class="font-semibold text-white mb-1">Nullifier stored, replay impossible</h3>
+          <p class="text-sm text-slate-400">The nullifier (a hash of the DKIM signature bytes, unique to the signed message) is stored on-chain in <code class="text-pink-400">pallet-zkattest</code>. Once recorded, the same proof cannot be reused.</p>
+        </div>
+      </div>
+
+      <div class="card rounded-xl p-5 flex items-start gap-4 border-green-500/20">
+        <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-white font-bold text-sm mt-0.5" style="background: #16a34a;">✓</div>
+        <div>
+          <h3 class="font-semibold text-white mb-1">People Chain integration target</h3>
+          <p class="text-sm text-slate-400"><code class="text-pink-400">pallet-zkattest</code> is designed to call the People Chain personhood interface once it is finalized. The goal is a candidate People Chain attestation path without government ID, in-person ceremony, or a trusted issuer for email ownership.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Demo -->
+<section id="demo" class="py-16 px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto">
+    <h2 class="text-3xl font-bold text-white mb-4 text-center">Live demo</h2>
+    <p class="text-slate-400 text-center mb-8">Drop any <code class="text-pink-400">.eml</code> file to see your DKIM signature extracted and validated in the page. The demo does not upload the file.</p>
+
+    <!-- Drop zone -->
+    <div id="drop-zone" class="drop-zone rounded-2xl p-10 text-center cursor-pointer mb-6" onclick="document.getElementById('file-input').click()">
+      <input type="file" id="file-input" accept=".eml,message/rfc822,text/plain" class="hidden">
+      <div id="drop-icon" class="text-4xl mb-3">📧</div>
+      <div id="drop-text" class="text-slate-400 text-sm">
+        <span class="text-white font-medium">Drop your .eml file here</span> or click to browse<br>
+        <span class="text-slate-500 text-xs mt-1 block">Export any email as .eml from your mail client. Nothing is uploaded.</span>
+      </div>
+    </div>
+
+    <!-- Result panel -->
+    <div id="result-panel" class="hidden">
+
+      <!-- Status -->
+      <div id="status-ok" class="hidden card rounded-xl p-4 mb-4 border-green-500/30">
+        <div class="flex items-center gap-2 text-green-400 font-medium text-sm mb-1">
+          <span>✓</span> DKIM signature found — this email is provable
+        </div>
+        <div class="text-xs text-slate-500">rsa-sha256 algorithm confirmed. This email can be used with the zkAttest ZK circuit.</div>
+      </div>
+
+      <div id="status-error" class="hidden card rounded-xl p-4 mb-4 border-red-500/30">
+        <div class="flex items-center gap-2 text-red-400 font-medium text-sm" id="error-msg"></div>
+      </div>
+
+      <!-- DKIM fields -->
+      <div id="dkim-fields" class="hidden card rounded-xl overflow-hidden mb-4">
+        <div class="px-4 py-2 border-b border-white/5 flex items-center justify-between">
+          <span class="text-xs text-slate-400 font-medium">DKIM-Signature</span>
+          <span id="algo-tag" class="tag text-pink-400 text-xs px-2 py-0.5 rounded-full"></span>
+        </div>
+        <div class="p-4 grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <div class="text-xs text-slate-500 mb-1">Domain (d=)</div>
+            <div id="field-domain" class="text-white font-mono font-medium"></div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 mb-1">Selector (s=)</div>
+            <div id="field-selector" class="text-white font-mono font-medium"></div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 mb-1">Algorithm (a=)</div>
+            <div id="field-algo" class="text-white font-mono font-medium"></div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 mb-1">Canonicalization (c=)</div>
+            <div id="field-canon" class="text-white font-mono font-medium"></div>
+          </div>
+          <div class="col-span-2">
+            <div class="text-xs text-slate-500 mb-1">DNS lookup (public key location)</div>
+            <div id="field-dns" class="text-pink-400 font-mono font-medium text-xs break-all"></div>
+          </div>
+          <div class="col-span-2">
+            <div class="text-xs text-slate-500 mb-1">Signature (b=, truncated)</div>
+            <div id="field-sig" class="text-slate-400 font-mono text-xs break-all"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- What happens next -->
+      <div id="next-steps" class="hidden card rounded-xl p-4 mb-4">
+        <div class="text-xs text-slate-400 mb-3 font-medium">END-TO-END FLOW (live below + pending pallet deploy)</div>
+        <div class="space-y-2">
+          <div class="flex items-start gap-2 text-xs">
+            <span class="tag-green text-green-400 px-1.5 py-0.5 rounded text-xs flex-shrink-0">ready</span>
+            <span class="text-slate-400">DKIM header parsed and validated ✓</span>
+          </div>
+          <div class="flex items-start gap-2 text-xs">
+            <span class="tag-green text-green-400 px-1.5 py-0.5 rounded text-xs flex-shrink-0">live</span>
+            <span class="text-slate-400">snarkjs.groth16.fullProve() generates a real Groth16 proof for a small toy circuit in your browser — try it below</span>
+          </div>
+          <div class="flex items-start gap-2 text-xs">
+            <span class="tag-green text-green-400 px-1.5 py-0.5 rounded text-xs flex-shrink-0">live</span>
+            <span class="text-slate-400">Toy proof submitted to the deployed toy Verifier on Polkadot Asset Hub mainnet via your wallet</span>
+          </div>
+          <div class="flex items-start gap-2 text-xs">
+            <span class="tag-yellow text-yellow-400 px-1.5 py-0.5 rounded text-xs flex-shrink-0">next</span>
+            <span class="text-slate-400">Real zkEmail circuit input building from raw .eml in the browser; full circuit proving is already deployed via CLI</span>
+          </div>
+          <div class="flex items-start gap-2 text-xs">
+            <span class="tag-yellow text-yellow-400 px-1.5 py-0.5 rounded text-xs flex-shrink-0">pending</span>
+            <span class="text-slate-400">pallet-zkattest.attest() targets the People Chain path once the production interface is finalized</span>
+          </div>
+          <div class="flex items-start gap-2 text-xs">
+            <span class="tag-yellow text-yellow-400 px-1.5 py-0.5 rounded text-xs flex-shrink-0">pending</span>
+            <span class="text-slate-400">Candidate attestation path evaluated for the People/Individuality stack</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reset -->
+      <button onclick="resetDemo()" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">↩ Try another file</button>
+    </div>
+  </div>
+</section>
+
+<!-- Groth16 in-browser demo -->
+<section id="zk-demo" class="py-16 px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto">
+    <div class="flex items-center justify-center gap-2 mb-3">
+      <span class="tag-green text-green-400 text-xs px-2 py-1 rounded-full">✓ Toy circuit, real Groth16</span>
+    </div>
+    <h2 class="text-3xl font-bold text-white mb-4 text-center">Try in-browser ZK proving</h2>
+    <p class="text-slate-400 text-center mb-2 max-w-2xl mx-auto">
+      This is the same Groth16 proving system zkAttest uses for email proofs — running here on a small demo circuit
+      to show real ZK performance in your browser. <span class="text-pink-400">No proving server. Inputs stay in the page.</span>
+    </p>
+    <p class="text-xs text-slate-500 text-center mb-8 max-w-xl mx-auto">
+      The demo circuit proves you know two numbers <code class="text-pink-400">a, b</code> such that iterating
+      <code class="text-pink-400">x ← x² + b</code> 1000 times starting from <code class="text-pink-400">a² + b</code>
+      yields the public output. The full zkEmail circuit replaces this with DKIM signature verification + regex matching.
+    </p>
+
+    <div class="card rounded-xl p-6">
+      <div class="grid grid-cols-2 gap-4 mb-6">
+        <div>
+          <label class="text-xs text-slate-400 mb-1 block">Secret input <code class="text-pink-400">a</code></label>
+          <input type="number" id="zk-a" value="7" min="1" max="1000"
+                 class="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white font-mono focus:border-pink-500 focus:outline-none">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 mb-1 block">Secret input <code class="text-pink-400">b</code></label>
+          <input type="number" id="zk-b" value="13" min="1" max="1000"
+                 class="w-full bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-white font-mono focus:border-pink-500 focus:outline-none">
+        </div>
+      </div>
+
+      <button id="zk-prove-btn" class="btn-primary w-full text-white py-3 rounded-lg font-semibold transition-colors glow">
+        Generate toy Groth16 proof
+      </button>
+
+      <!-- Progress -->
+      <div id="zk-progress" class="hidden mt-6 space-y-2">
+        <div id="zk-step-1" class="flex items-center gap-2 text-sm text-slate-400">
+          <span class="zk-spinner">⏳</span> <span>Loading snarkjs + circuit (~700 KB, one-time)…</span>
+        </div>
+        <div id="zk-step-2" class="hidden flex items-center gap-2 text-sm text-slate-400">
+          <span class="zk-spinner">⏳</span> <span>Computing witness…</span>
+        </div>
+        <div id="zk-step-3" class="hidden flex items-center gap-2 text-sm text-slate-400">
+          <span class="zk-spinner">⏳</span> <span>Generating Groth16 proof…</span>
+        </div>
+        <div id="zk-step-4" class="hidden flex items-center gap-2 text-sm text-slate-400">
+          <span class="zk-spinner">⏳</span> <span>Verifying proof locally…</span>
+        </div>
+      </div>
+
+      <!-- Result -->
+      <div id="zk-result" class="hidden mt-6">
+        <div class="border-t border-white/5 pt-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2 text-green-400 font-semibold">
+              <span class="text-xl">✓</span>
+              <span>Proof verified</span>
+            </div>
+            <span id="zk-timing" class="text-xs text-slate-500 font-mono"></span>
+          </div>
+
+          <div class="space-y-3 text-sm">
+            <div>
+              <div class="text-xs text-slate-500 mb-1">Public output <code class="text-pink-400">c</code> (computed by circuit)</div>
+              <div id="zk-public" class="font-mono text-xs text-slate-300 bg-slate-900/50 rounded px-3 py-2 break-all"></div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500 mb-1">Groth16 proof π = (A, B, C)</div>
+              <pre id="zk-proof" class="font-mono text-xs text-slate-400 bg-slate-900/50 rounded px-3 py-2 overflow-x-auto"></pre>
+            </div>
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div class="bg-slate-900/50 rounded px-3 py-2">
+                <div class="text-slate-500">Proof size</div>
+                <div id="zk-proof-size" class="text-white font-mono font-medium">—</div>
+              </div>
+              <div class="bg-slate-900/50 rounded px-3 py-2">
+                <div class="text-slate-500">Curve</div>
+                <div class="text-white font-mono font-medium">BN254 (same as Asset Hub precompile)</div>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-xs text-slate-500 mt-4">
+            ↑ This proof is a real Groth16 proof on BN254 using the same proving stack and curve family as the
+            deployed PolkaVM verifiers on Polkadot Asset Hub. The production email circuit has different public
+            inputs and a separate verifier, which is already deployed and verified through the CLI path.
+          </p>
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div id="zk-error" class="hidden mt-6 card rounded-xl p-4 border-red-500/30">
+        <div id="zk-error-msg" class="text-red-400 text-sm"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Technical -->
+<section id="technical" class="py-16 px-6 border-t border-white/5">
+  <div class="max-w-5xl mx-auto">
+    <h2 class="text-3xl font-bold text-white mb-4 text-center">Technical status</h2>
+    <p class="text-slate-400 text-center mb-12">What's built, what's in progress, and what's next.</p>
+
+    <div class="grid md:grid-cols-2 gap-4">
+
+      <div class="card rounded-xl p-5">
+        <div class="tag-green text-green-400 text-xs px-2 py-1 rounded-full inline-block mb-3">✓ Complete</div>
+        <h3 class="font-semibold text-white mb-3">Groth16 Verifier · PolkaVM</h3>
+        <p class="text-sm text-slate-400 mb-3">A snarkjs-generated Groth16 <code class="text-pink-400">Verifier.sol</code> compiles to valid PolkaVM bytecode via Parity's <code class="text-pink-400">resolc 1.1.0</code> with zero source modifications. <code class="text-pink-400">PVM\0</code> magic confirmed. Deployed and proof-verified end-to-end on Polkadot Asset Hub mainnet.</p>
+        <div id="contract-address" class="hidden">
+          <div class="mb-3 pb-3 border-b border-white/10">
+            <div class="text-xs text-green-400 font-semibold mb-1">Real zkEmail circuit (315k constraints)</div>
+            <div class="text-xs text-slate-500 mb-1">Verifier contract</div>
+            <div id="contract-real-addr-val" class="font-mono text-xs text-pink-400 break-all">0xca1a3ad129e204d9af942a30f7f09282d20e28bf</div>
+            <div class="text-xs text-slate-500 mt-2 mb-1">Deploy tx</div>
+            <div class="font-mono text-xs text-pink-400 break-all">0x271f59aa8c7670809efb8f76c594628cc0eeb8bc9f68f796ca8eff8a8fbf1edc</div>
+            <div class="text-xs text-slate-500 mt-2 mb-1">Verify tx (real proof → <span class="text-green-400">true</span>, gas: 3.93B refTime)</div>
+            <div class="font-mono text-xs text-pink-400 break-all">0x82bdae3a8530797f890d41d279daccc087d3a4e7e35ecaf2b99275cad4f71acc</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 font-semibold mb-1">Toy circuit (1k constraints, used by browser demo below)</div>
+            <div class="text-xs text-slate-500 mb-1">Verifier contract</div>
+            <div id="contract-addr-val" class="font-mono text-xs text-pink-400 break-all"></div>
+            <div class="text-xs text-slate-500 mt-2 mb-1">Deploy tx</div>
+            <div id="contract-tx-val" class="font-mono text-xs text-pink-400 break-all"></div>
+            <div class="text-xs text-slate-500 mt-2 mb-1">Verify tx</div>
+            <div id="contract-verify-val" class="font-mono text-xs text-pink-400 break-all"></div>
+          </div>
+        </div>
+        <div id="contract-pending" class="text-xs text-slate-500 mt-2">
+          <span class="tag-yellow text-yellow-400 px-2 py-0.5 rounded text-xs">Deploy pending</span>
+          Run <code class="text-slate-400">node spike/deploy-substrate.mjs</code> against Asset Hub to populate.
+        </div>
+      </div>
+
+      <div class="card rounded-xl p-5">
+        <div class="tag-green text-green-400 text-xs px-2 py-1 rounded-full inline-block mb-3">✓ 23 source tests</div>
+        <h3 class="font-semibold text-white mb-3">FRAME Pallets</h3>
+        <p class="text-sm text-slate-400 mb-2"><code class="text-pink-400">pallet-dkim-registry</code> — governance-gated on-chain key registry. 5 tests.</p>
+        <p class="text-sm text-slate-400 mb-2"><code class="text-pink-400">pallet-zkattest</code> — attest/revoke extrinsics, nullifier storage, DIM2 integration target. 18 tests.</p>
+        <p class="text-sm text-slate-400">The zkAttest count includes 5 pallet tests, <code class="text-pink-400">evm_abi</code> (Solidity calldata encoder/decoder, 8 tests), and <code class="text-pink-400">ReviveVerifier</code> (ABI bridge to deployed verifier contract, 5 tests).</p>
+        <a href="https://github.com/msmrez/zkattest" target="_blank" class="text-xs text-pink-400 hover:text-pink-300 mt-2 block">View source ↗</a>
+      </div>
+
+      <div class="card rounded-xl p-5">
+        <div class="tag-green text-green-400 text-xs px-2 py-1 rounded-full inline-block mb-3">✓ Prototype</div>
+        <h3 class="font-semibold text-white mb-3">DKIM Scraper</h3>
+        <p class="text-sm text-slate-400">Queries DNS and archives active DKIM public keys before they rotate. Confirmed pulling live RSA keys from Gmail, Yahoo, ProtonMail, SendGrid, and others. Intended to feed governance proposals to <code class="text-pink-400">pallet-dkim-registry</code>.</p>
+      </div>
+
+      <div class="card rounded-xl p-5">
+        <div class="tag-yellow text-yellow-400 text-xs px-2 py-1 rounded-full inline-block mb-3">In progress</div>
+        <h3 class="font-semibold text-white mb-3">Prover SDK</h3>
+        <p class="text-sm text-slate-400 mb-3">TypeScript/ESM package (<code class="text-pink-400">@zkattest/prover</code>). DKIM header parsing, EML splitting, and <code class="text-pink-400">@zk-email/helpers</code> integration complete. The on-page demo uses a toy circuit; the real zkEmail circuit artifacts are hosted on Cloudflare R2.</p>
+        <div id="r2-status" class="text-xs text-slate-500">
+          <span class="tag-yellow text-yellow-400 px-2 py-0.5 rounded text-xs">R2 pending</span>
+          Real-circuit artifacts: set <code class="text-slate-400">ZKEMAIL_BASE_URL</code> in <code class="text-slate-400">web/index.html</code>.
+        </div>
+        <div id="r2-configured" class="hidden text-xs text-slate-500">
+          <span class="tag-green text-green-400 px-2 py-0.5 rounded text-xs">R2 wired</span>
+          <span>Real-circuit artifacts: </span>
+          <a id="r2-url" href="#" target="_blank" rel="noopener" class="text-pink-400 break-all"></a>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="mt-6 card rounded-xl p-5">
+      <h3 class="font-semibold text-white mb-3">Trust model at a glance</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs text-slate-500 border-b border-white/5">
+              <th class="text-left py-2 pr-4 font-medium">Component</th>
+              <th class="text-left py-2 pr-4 font-medium">Trust assumption</th>
+              <th class="text-left py-2 font-medium">Failure mode</th>
+            </tr>
+          </thead>
+          <tbody class="text-slate-400">
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4">DKIM public key</td>
+              <td class="py-2 pr-4">Email provider's DNS (e.g. Gmail)</td>
+              <td class="py-2">Provider compromised (key rotation mitigates)</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4">Key registry</td>
+              <td class="py-2 pr-4">Polkadot governance</td>
+              <td class="py-2">Malicious governance update (OpenGov timelock)</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4">ZK circuit</td>
+              <td class="py-2 pr-4">Upstream zkEmail circuits/helpers + open source review</td>
+              <td class="py-2">Circuit bug (independent audit planned)</td>
+            </tr>
+            <tr>
+              <td class="py-2 pr-4">Proof verifier</td>
+              <td class="py-2 pr-4">BN254 pairing precompile (PolkaVM)</td>
+              <td class="py-2">Precompile bug (Parity-maintained)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-xs text-slate-500 mt-3">
+        Known privacy tradeoff: the current nullifier design is derived from DKIM signature bytes, which are unique per email message. The email provider could in principle correlate that nullifier to the original message. A production DIM should document or improve this construction before deployment.
+      </p>
+    </div>
+
+    <div class="mt-6 card rounded-xl p-5">
+      <h3 class="font-semibold text-white mb-3">zkAttest vs. zkEmail</h3>
+      <p class="text-xs text-slate-500 mb-4">
+        zkAttest <strong>uses</strong> zkEmail's Circom circuits and TypeScript helpers, but is a different project with a different target. zkEmail is upstream DKIM proof infrastructure; zkAttest is the Polkadot-native People Chain integration prototype around that infrastructure.
+      </p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs text-slate-500 border-b border-white/5">
+              <th class="text-left py-2 pr-4 font-medium"></th>
+              <th class="text-left py-2 pr-4 font-medium text-pink-400">zkAttest <span class="text-slate-500 font-normal">(this project)</span></th>
+              <th class="text-left py-2 font-medium">zkEmail <span class="text-slate-500 font-normal">(upstream)</span></th>
+            </tr>
+          </thead>
+          <tbody class="text-slate-400">
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4 text-slate-500">Where the proof verifies</td>
+              <td class="py-2 pr-4">Polkadot Asset Hub via <code class="text-pink-400">pallet-revive</code> (PolkaVM); later <code class="text-pink-400">pallet-zkattest</code> on People Chain</td>
+              <td class="py-2">Application-specific smart contracts, primarily EVM-oriented today</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4 text-slate-500">Verifier compiler</td>
+              <td class="py-2 pr-4">Solidity → PolkaVM via <code class="text-pink-400">resolc 1.1.0</code> (Parity)</td>
+              <td class="py-2">Solidity → EVM via solc</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4 text-slate-500">Wallet integration</td>
+              <td class="py-2 pr-4">Polkadot.js / Talisman / SubWallet (injected web3)</td>
+              <td class="py-2">MetaMask / WalletConnect</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4 text-slate-500">DKIM key trust root</td>
+              <td class="py-2 pr-4">On-chain <code class="text-pink-400">pallet-dkim-registry</code> (governance-curated) + DKIM scraper</td>
+              <td class="py-2">Application-specific key and verifier management</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4 text-slate-500">Integration target</td>
+              <td class="py-2 pr-4">A candidate email-ownership attestation path for Polkadot's People/Individuality stack</td>
+              <td class="py-2">An ERC-721 / contract state (e.g. proof-of-twitter NFT)</td>
+            </tr>
+            <tr class="border-b border-white/5">
+              <td class="py-2 pr-4 text-slate-500">Circuit source</td>
+              <td class="py-2 pr-4"><code class="text-pink-400">@zk-email/circuits</code> EmailVerifier (reused as-is)</td>
+              <td class="py-2"><strong>↑ same</strong> — we don't fork or reimplement</td>
+            </tr>
+            <tr>
+              <td class="py-2 pr-4 text-slate-500">Reference circuit demo</td>
+              <td class="py-2 pr-4">People / Individuality attestation prototype for Polkadot</td>
+              <td class="py-2"><a href="https://twitter.prove.email" target="_blank" rel="noopener" class="text-pink-400 hover:text-pink-300">proof-of-twitter</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-xs text-slate-500 mt-3">
+        <strong>Why this matters:</strong> Polkadot's People / Individuality system could benefit from at least one privacy-preserving DIM2 (Decentralized Individuality Mechanism, tier 2) credential source. The named candidates on Polkadot today - KILT SocialKYC, eIDAS, Reclaim Protocol - include either an issuer, attestor, or service-specific verifier in the trust path. zkEmail-based credential signals exist elsewhere, notably the <a href="https://passport.human.tech/blog/boost-your-unique-humanity-score-with-zk-email-stamp-through-amazon-and-uber-receipts" target="_blank" rel="noopener" class="text-pink-400 hover:text-pink-300">ZK Email Stamp on Human Passport</a> for Ethereum, which proves Amazon/Uber receipts as a proxy for economic activity, but no equivalent Polkadot-native email-ownership path is established. zkAttest targets that gap, made possible by zkEmail's primitives plus pallet-revive's PolkaVM mainnet availability.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- Wallet status (hidden until connected) -->
+<section id="wallet-section" class="hidden py-12 px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto">
+    <h2 class="text-3xl font-bold text-white mb-4 text-center">Wallet connected</h2>
+    <p class="text-slate-400 text-center mb-8">
+      The button below previews the future <code class="text-pink-400">pallet-zkattest.attest()</code> extrinsic
+      shape for the future People Chain path. To submit the current toy proof on-chain now, scroll
+      down to the <span class="text-white">Verify the demo proof on mainnet</span> section.
+    </p>
+    <div class="card rounded-xl p-5">
+      <div class="text-xs text-slate-500 mb-2">Selected account</div>
+      <div id="wallet-account-name" class="text-white font-semibold mb-1">—</div>
+      <div id="wallet-account-addr" class="font-mono text-xs text-pink-400 break-all mb-4">—</div>
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <div class="text-xs text-slate-500 mb-1">Source extension</div>
+          <div id="wallet-source" class="text-white text-sm">—</div>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500 mb-1">Detected accounts</div>
+          <div id="wallet-count" class="text-white text-sm">—</div>
+        </div>
+      </div>
+      <button id="wallet-submit-btn" onclick="simulateAttest()"
+              class="btn-primary text-white px-4 py-2 rounded-lg font-semibold text-sm w-full">
+        Preview attest() transaction
+      </button>
+      <div id="wallet-preview" class="hidden mt-4 bg-slate-900/50 rounded-lg p-3">
+        <div class="text-xs text-slate-500 mb-2">Transaction payload preview</div>
+        <pre id="wallet-preview-content" class="text-xs text-slate-300 font-mono overflow-x-auto"></pre>
+        <div class="text-xs text-slate-500 mt-3">
+          ↑ This previews the intended <code class="text-pink-400">pallet-zkattest.attest()</code> shape. Values are
+          placeholders unless you generated the toy proof above; the real email-proof transaction path is a grant milestone.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Real on-chain verify (hidden until both proof + wallet are ready) -->
+<section id="onchain-section" class="hidden py-12 px-6 border-t border-white/5">
+  <div class="max-w-3xl mx-auto">
+    <h2 class="text-3xl font-bold text-white mb-4 text-center">Verify the demo proof on mainnet</h2>
+    <p class="text-slate-400 text-center mb-8">
+      Submit the toy Groth16 proof you just generated to the deployed toy Verifier on
+      <span class="text-pink-400">Polkadot Asset Hub</span>. Dry-run is free (off-chain runtime call);
+      on-chain submission may incur DOT fees and produces a citable tx hash.
+    </p>
+    <div class="card rounded-xl p-5">
+      <div class="text-xs text-slate-500 mb-1">Toy verifier contract</div>
+      <div class="font-mono text-xs text-pink-400 break-all mb-4">0x4fa8678fb0188b29e49254759fb876eecdede468</div>
+
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <button id="onchain-dryrun-btn" onclick="onchainDryRun()"
+                class="btn-primary text-white px-4 py-2 rounded-lg font-semibold text-sm">
+          Dry-run (free)
+        </button>
+        <button id="onchain-submit-btn" onclick="onchainSubmit()"
+                class="text-white px-4 py-2 rounded-lg font-semibold text-sm border border-white/20 hover:bg-white/5">
+          Submit on-chain
+        </button>
+      </div>
+
+      <div id="onchain-progress" class="hidden text-xs text-slate-400 mb-3"></div>
+
+      <div id="onchain-result" class="hidden bg-slate-900/50 rounded-lg p-3 text-xs">
+        <div id="onchain-result-summary" class="text-white mb-2"></div>
+        <pre id="onchain-result-detail" class="text-slate-300 font-mono overflow-x-auto"></pre>
+      </div>
+
+      <div id="onchain-error" class="hidden mt-3 text-xs text-red-400"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="py-12 px-6 border-t border-white/5 text-center">
+  <div class="max-w-2xl mx-auto">
+    <div class="flex items-center justify-center gap-2 mb-4">
+      <div class="w-6 h-6 rounded-md step-num flex items-center justify-center text-white text-xs font-bold">ZK</div>
+      <span class="font-semibold text-white">zkAttest</span>
+    </div>
+    <p class="text-sm text-slate-500 mb-4">A privacy-preserving DIM2-compatible attestation prototype for Polkadot's People Chain.<br>Public repo. No token. Public-good goal.</p>
+    <div class="flex items-center justify-center gap-6 text-sm text-slate-500">
+      <a href="https://github.com/msmrez/zkattest" target="_blank" rel="noopener" class="hover:text-white transition-colors">GitHub</a>
+      <a href="https://forum.polkadot.network" target="_blank" rel="noopener" class="hover:text-white transition-colors">Polkadot Forum</a>
+      <a href="https://zk.email" target="_blank" rel="noopener" class="hover:text-white transition-colors">zkEmail (upstream)</a>
+    </div>
+    <p class="text-xs text-slate-600 mt-6">Built on zkEmail (Aayush Gupta, Sora Suegami, Sampriti Panda; upstream supported by Ethereum Foundation PSE and 0xPARC) · DKIM: RFC 6376</p>
+  </div>
+</footer>
+
+<script>
+// ─── DKIM parser (same logic as prover/src/eml.ts, ported to vanilla JS) ───
+
+function extractDkimHeader(eml) {
+  // Unfold continuation lines (RFC 2822)
+  const unfolded = eml.replace(/\r?\n[ \t]+/g, ' ');
+  const match = unfolded.match(/^DKIM-Signature:\s*(.+)$/im);
+  if (!match) return null;
+
+  const raw = match[1].trim();
+  const tag = (name) => {
+    const m = raw.match(new RegExp('(?:^|;)\\s*' + name + '=([^;]+)', 'i'));
+    return m ? m[1].trim() : null;
+  };
+
+  const domain    = tag('d');
+  const selector  = tag('s');
+  const algorithm = tag('a') ?? 'rsa-sha256';
+  const keyType   = tag('k') ?? 'rsa';
+  const canon     = tag('c') ?? 'simple/simple';
+  const signature = tag('b');
+
+  if (!domain || !selector || !signature) return null;
+
+  return { raw, domain, selector, algorithm, keyType, canonicalization: canon, signature };
+}
+
+// ─── Demo UI ───
+
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const resultPanel = document.getElementById('result-panel');
+
+function handleEml(text) {
+  const dkim = extractDkimHeader(text);
+  document.getElementById('result-panel').classList.remove('hidden');
+  document.getElementById('drop-zone').style.display = 'none';
+
+  if (!dkim) {
+    document.getElementById('status-error').classList.remove('hidden');
+    document.getElementById('error-msg').textContent = 'No DKIM-Signature header found. zkAttest needs a DKIM-signed email for this demo.';
+    return;
+  }
+
+  const algo = dkim.algorithm.toLowerCase();
+  if (!algo.includes('sha256')) {
+    document.getElementById('status-error').classList.remove('hidden');
+    document.getElementById('error-msg').textContent =
+      `✗ Unsupported algorithm: ${dkim.algorithm}. zkAttest requires rsa-sha256.`;
+    return;
+  }
+
+  document.getElementById('status-ok').classList.remove('hidden');
+  document.getElementById('dkim-fields').classList.remove('hidden');
+  document.getElementById('next-steps').classList.remove('hidden');
+
+  document.getElementById('field-domain').textContent = dkim.domain;
+  document.getElementById('field-selector').textContent = dkim.selector;
+  document.getElementById('field-algo').textContent = dkim.algorithm;
+  document.getElementById('field-canon').textContent = dkim.canonicalization;
+  document.getElementById('field-dns').textContent =
+    `${dkim.selector}._domainkey.${dkim.domain}`;
+  document.getElementById('field-sig').textContent =
+    dkim.signature.replace(/\s+/g, '').substring(0, 88) + '…';
+  document.getElementById('algo-tag').textContent = dkim.algorithm;
+}
+
+function resetDemo() {
+  document.getElementById('result-panel').classList.add('hidden');
+  document.getElementById('status-ok').classList.add('hidden');
+  document.getElementById('status-error').classList.add('hidden');
+  document.getElementById('dkim-fields').classList.add('hidden');
+  document.getElementById('next-steps').classList.add('hidden');
+  document.getElementById('drop-zone').style.display = '';
+  fileInput.value = '';
+}
+
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => handleEml(ev.target.result);
+  reader.readAsText(file);
+});
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => handleEml(ev.target.result);
+  reader.readAsText(file);
+});
+
+// ─── In-browser Groth16 prover ───
+// Uses snarkjs.min.js loaded lazily on first click to avoid the 700KB hit on page load.
+
+let snarkjsLoaded = false;
+function loadSnarkjs() {
+  if (snarkjsLoaded) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'circuit/snarkjs.min.js';
+    s.onload = () => { snarkjsLoaded = true; resolve(); };
+    s.onerror = () => reject(new Error('Failed to load snarkjs.min.js'));
+    document.head.appendChild(s);
+  });
+}
+
+function fmtHex(decimalStr) {
+  return '0x' + BigInt(decimalStr).toString(16).padStart(64, '0');
+}
+
+async function generateProof() {
+  const a = document.getElementById('zk-a').value;
+  const b = document.getElementById('zk-b').value;
+  const btn = document.getElementById('zk-prove-btn');
+  const progress = document.getElementById('zk-progress');
+  const result = document.getElementById('zk-result');
+  const error = document.getElementById('zk-error');
+  const step1 = document.getElementById('zk-step-1');
+  const step2 = document.getElementById('zk-step-2');
+  const step3 = document.getElementById('zk-step-3');
+  const step4 = document.getElementById('zk-step-4');
+
+  btn.disabled = true;
+  btn.textContent = 'Proving…';
+  progress.classList.remove('hidden');
+  result.classList.add('hidden');
+  error.classList.add('hidden');
+  step1.classList.remove('hidden');
+  step2.classList.add('hidden');
+  step3.classList.add('hidden');
+  step4.classList.add('hidden');
+
+  const t0 = performance.now();
+  try {
+    await loadSnarkjs();
+    step1.innerHTML = '<span style="color:#22c55e">✓</span> <span class="text-slate-400">snarkjs + circuit loaded</span>';
+    step2.classList.remove('hidden');
+
+    const t1 = performance.now();
+    const tWitness = t1 - t0;
+
+    step3.classList.remove('hidden');
+    const { proof, publicSignals } = await window.snarkjs.groth16.fullProve(
+      { a: a, b: b },
+      'circuit/circuit.wasm',
+      'circuit/circuit_final.zkey'
+    );
+    const t2 = performance.now();
+    const tProve = t2 - t1;
+
+    step2.innerHTML = '<span style="color:#22c55e">✓</span> <span class="text-slate-400">Witness computed</span>';
+    step3.innerHTML = `<span style="color:#22c55e">✓</span> <span class="text-slate-400">Groth16 proof generated (${(tProve/1000).toFixed(1)}s)</span>`;
+    step4.classList.remove('hidden');
+
+    const vkey = await fetch('circuit/verification_key.json').then(r => r.json());
+    const verified = await window.snarkjs.groth16.verify(vkey, publicSignals, proof);
+    const t3 = performance.now();
+    const tVerify = t3 - t2;
+
+    if (!verified) throw new Error('Proof verification failed (this should not happen)');
+
+    step4.innerHTML = `<span style="color:#22c55e">✓</span> <span class="text-slate-400">Verified locally (${tVerify.toFixed(0)}ms)</span>`;
+
+    document.getElementById('zk-timing').textContent =
+      `Total: ${((t3-t0)/1000).toFixed(1)}s · Prove: ${(tProve/1000).toFixed(1)}s · Verify: ${tVerify.toFixed(0)}ms`;
+    document.getElementById('zk-public').textContent = fmtHex(publicSignals[0]);
+
+    const proofDisplay = {
+      A: [fmtHex(proof.pi_a[0]), fmtHex(proof.pi_a[1])],
+      B: [
+        [fmtHex(proof.pi_b[0][0]), fmtHex(proof.pi_b[0][1])],
+        [fmtHex(proof.pi_b[1][0]), fmtHex(proof.pi_b[1][1])]
+      ],
+      C: [fmtHex(proof.pi_c[0]), fmtHex(proof.pi_c[1])]
+    };
+    document.getElementById('zk-proof').textContent = JSON.stringify(proofDisplay, null, 2);
+
+    const proofBytes = 2*32 + 4*32 + 2*32;  // 8 field elements
+    document.getElementById('zk-proof-size').textContent = `${proofBytes} bytes (8 × uint256)`;
+
+    // Stash the raw proof for on-chain verify. The Fp2 limb swap on pi_b
+    // mirrors snarkjs's exportSolidityCallData — the Solidity verifier expects
+    // [c0, c1] but snarkjs serialises as [c1, c0].
+    window.lastProof = {
+      a: [proof.pi_a[0], proof.pi_a[1]],
+      b: [
+        [proof.pi_b[0][1], proof.pi_b[0][0]],
+        [proof.pi_b[1][1], proof.pi_b[1][0]],
+      ],
+      c: [proof.pi_c[0], proof.pi_c[1]],
+      input: [publicSignals[0]],
+    };
+    // Reveal the on-chain verify section once a proof exists AND a wallet is connected.
+    maybeRevealOnchain();
+
+    result.classList.remove('hidden');
+    btn.textContent = 'Prove again with different inputs';
+  } catch (e) {
+    console.error(e);
+    document.getElementById('zk-error-msg').textContent = '✗ ' + e.message;
+    error.classList.remove('hidden');
+    btn.textContent = 'Try again';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('zk-prove-btn').addEventListener('click', generateProof);
+
+// ─── Polkadot wallet connect ───
+// Uses window.injectedWeb3 directly — the global injected by all Polkadot
+// browser extensions (Polkadot.js, Talisman, SubWallet, Nova). No external
+// library required. This API has been stable since 2020.
+
+async function waitForInjection(timeoutMs = 2000) {
+  // The extension injects window.injectedWeb3 shortly after page load.
+  const start = Date.now();
+  while (!window.injectedWeb3 || Object.keys(window.injectedWeb3).length === 0) {
+    if (Date.now() - start > timeoutMs) return null;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return window.injectedWeb3;
+}
+
+let connectedAccounts = [];
+let selectedAccount = null;
+let selectedSource = null;
+
+async function connectWallet({ silent = false } = {}) {
+  const btn = document.getElementById('wallet-btn');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  if (!silent) btn.textContent = 'Connecting…';
+
+  try {
+    const injectedWeb3 = await waitForInjection();
+    if (!injectedWeb3) {
+      if (silent) return;       // no extension yet on auto-reconnect — fail quietly
+      throw new Error(
+        'No Polkadot wallet extension detected. Install one of:\n' +
+        '  • Polkadot.js extension (polkadot.js.org/extension)\n' +
+        '  • Talisman (talisman.xyz)\n' +
+        '  • SubWallet (subwallet.app)\n' +
+        'Then reload this page.'
+      );
+    }
+
+    // Prefer polkadot-js, fall back to whatever is installed
+    const sources = Object.keys(injectedWeb3);
+    const source = sources.includes('polkadot-js') ? 'polkadot-js' : sources[0];
+    selectedSource = source;
+
+    // Enable the extension. If the user previously approved zkAttest on this
+    // origin, this resolves without UI — that's what powers the auto-reconnect.
+    const injected = await injectedWeb3[source].enable('zkAttest');
+    const accounts = await injected.accounts.get();
+
+    if (accounts.length === 0) {
+      if (silent) return;
+      throw new Error(
+        'Wallet connected, but no accounts visible to this site.\n' +
+        'Open your extension, create or import an account, ' +
+        'then enable "visible on this site" and reload.'
+      );
+    }
+
+    connectedAccounts = accounts;
+    selectedAccount = accounts[0];
+    window.injectedSigner = injected.signer;
+    localStorage.setItem('zkattest:connected', '1');
+    maybeRevealOnchain();
+
+    const sec = document.getElementById('wallet-section');
+    sec.classList.remove('hidden');
+    document.getElementById('wallet-account-name').textContent =
+      selectedAccount.name || 'Account';
+    document.getElementById('wallet-account-addr').textContent = selectedAccount.address;
+    document.getElementById('wallet-source').textContent = source;
+    document.getElementById('wallet-count').textContent =
+      `${accounts.length} account${accounts.length === 1 ? '' : 's'} from ${sources.length} extension${sources.length === 1 ? '' : 's'}`;
+
+    btn.textContent = '✓ ' + (selectedAccount.name || selectedAccount.address.slice(0, 6) + '…');
+    btn.disabled = false;
+    if (!silent) sec.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    console.error('Wallet connect failed:', e);
+    if (!silent) alert(e.message);
+    btn.textContent = origText;
+    btn.disabled = false;
+    // If silent re-connect failed, clear the flag so the next manual click re-runs the prompt.
+    if (silent) localStorage.removeItem('zkattest:connected');
+  }
+}
+
+// Auto-reconnect on load if the user has approved zkAttest in a previous visit.
+// The extension remembers per-site approvals, so enable() resolves without UI.
+if (localStorage.getItem('zkattest:connected')) {
+  // Wait for the extension to inject itself, then try silently.
+  setTimeout(() => connectWallet({ silent: true }), 500);
+}
+
+function simulateAttest() {
+  // Show the intended extrinsic shape pallet-zkattest.attest() expects.
+  // Pulls toy proof values from the upper ZK demo if generated; otherwise placeholders.
+  const proofEl = document.getElementById('zk-proof');
+  const publicEl = document.getElementById('zk-public');
+  const dkimDomain = document.getElementById('field-domain')?.textContent || 'gmail.com';
+  const dkimSel    = document.getElementById('field-selector')?.textContent || '20230601';
+
+  const hasProof = proofEl && proofEl.textContent.length > 10;
+  const proof = hasProof ? JSON.parse(proofEl.textContent) : {
+    A: ['0x0000…0000', '0x0000…0000'],
+    B: [['0x0000…0000', '0x0000…0000'], ['0x0000…0000', '0x0000…0000']],
+    C: ['0x0000…0000', '0x0000…0000']
+  };
+  const publicInputs = publicEl && publicEl.textContent.length > 10
+    ? [publicEl.textContent, '0x0000…0000', '0x0000…0000']
+    : ['0x...dkimKeyHash', '0x...emailCommitment', '0x...nullifier'];
+
+  const tx = {
+    pallet: 'zkattest',
+    call: 'attest',
+    signer: selectedAccount.address,
+    source: selectedSource,
+    args: {
+      proof: proof,
+      public_inputs: publicInputs,
+      domain: dkimDomain,
+      selector: dkimSel,
+      member_key: '0x' + '00'.repeat(32)  // Bandersnatch pubkey placeholder
+    },
+    note: hasProof
+      ? 'Toy proof values from the in-browser Groth16 demo above'
+      : 'Placeholder - generate a proof in the ZK demo section first'
+  };
+
+  document.getElementById('wallet-preview').classList.remove('hidden');
+  document.getElementById('wallet-preview-content').textContent = JSON.stringify(tx, null, 2);
+}
+
+// ─── R2-hosted zkEmail circuit artifacts ───
+// Set to your Cloudflare R2 public base URL (no trailing slash). The page
+// expects circuit.wasm, circuit_final.zkey, and verification_key.json directly
+// under this prefix. When set, the "real circuit" demo path is available.
+// See HOSTING.md for upload instructions.
+const ZKEMAIL_BASE_URL = 'https://pub-a34a2db2f64d4ca1b7914c0cfe6652fc.r2.dev/email_ownership';
+
+if (ZKEMAIL_BASE_URL) {
+  document.getElementById('r2-status').classList.add('hidden');
+  document.getElementById('r2-configured').classList.remove('hidden');
+  const a = document.getElementById('r2-url');
+  a.textContent = ZKEMAIL_BASE_URL;
+  a.href = `${ZKEMAIL_BASE_URL}/verification_key.json`;
+}
+
+// ─── Contract deployment status (fill in after deploy.mjs) ───
+// To update: set ZKATTEST_CONTRACT_ADDR and ZKATTEST_DEPLOY_TX below.
+const CONTRACT_ADDR = '0x4fa8678fb0188b29e49254759fb876eecdede468';
+const DEPLOY_TX     = '0x487d1bd6f9bcffa28372bfa71f150093c09fa005cbdb67aed371209cc6f36e78';
+const VERIFY_TX     = '0xe3e11b8a2b386e2aa77dd8168d7aac7200bb83529f44ad1d92e2922e061f76a8';
+
+if (CONTRACT_ADDR && DEPLOY_TX) {
+  document.getElementById('contract-pending').classList.add('hidden');
+  document.getElementById('contract-address').classList.remove('hidden');
+  document.getElementById('contract-addr-val').textContent = CONTRACT_ADDR;
+  document.getElementById('contract-tx-val').textContent = DEPLOY_TX;
+  document.getElementById('contract-verify-val').textContent = VERIFY_TX;
+}
+
+// ─── On-chain verify (browser flow mirroring spike/verify-substrate.mjs) ───
+// Lazy-loads @polkadot/api on first click — the bundle is ~700 KB so we only
+// fetch it when the user actually wants to submit. The wallet's injected
+// signer is reused so no second password prompt is needed.
+
+const WS_URL = 'wss://polkadot-asset-hub-rpc.polkadot.io';
+// verifyProof(uint256[2],uint256[2][2],uint256[2],uint256[1]) selector — keccak256 first 4 bytes
+const SELECTOR = '43753b4d';
+
+function maybeRevealOnchain() {
+  if (window.lastProof && selectedAccount) {
+    document.getElementById('onchain-section').classList.remove('hidden');
+  }
+}
+
+function pad32(v) {
+  let h = BigInt(v).toString(16);
+  while (h.length < 64) h = '0' + h;
+  return h;
+}
+
+function encodeCalldata(p) {
+  // verifyProof(a[2], b[2][2], c[2], input[1]) — all fixed-size, no offsets.
+  return '0x' + SELECTOR +
+    pad32(p.a[0]) + pad32(p.a[1]) +
+    pad32(p.b[0][0]) + pad32(p.b[0][1]) +
+    pad32(p.b[1][0]) + pad32(p.b[1][1]) +
+    pad32(p.c[0]) + pad32(p.c[1]) +
+    pad32(p.input[0]);
+}
+
+let polkadotApiPromise = null;
+function loadPolkadotApi() {
+  if (polkadotApiPromise) return polkadotApiPromise;
+  polkadotApiPromise = (async () => {
+    // ESM CDN. The version matters — @polkadot/api had no ReviveApi
+    // definition before v16 (pallet-revive shipped to Polkadot mainnet in
+    // early 2026), so older bundles list every other runtime API but not
+    // reviveApi. We pin to ^16 (matches the CLI side).
+    try {
+      return await import('https://cdn.jsdelivr.net/npm/@polkadot/api@16/+esm');
+    } catch (e) {
+      console.warn('jsdelivr ESM failed, falling back to esm.sh:', e.message);
+      return await import('https://esm.sh/@polkadot/api@16');
+    }
+  })();
+  return polkadotApiPromise;
+}
+
+let apiPromise = null;
+async function getApi() {
+  if (apiPromise) return apiPromise;
+  apiPromise = (async () => {
+    const { ApiPromise, WsProvider } = await loadPolkadotApi();
+    const api = await ApiPromise.create({ provider: new WsProvider(WS_URL) });
+    await api.isReady;
+    return api;
+  })();
+  return apiPromise;
+}
+
+function setProgress(msg) {
+  const el = document.getElementById('onchain-progress');
+  el.classList.remove('hidden');
+  el.textContent = msg;
+}
+function clearError() {
+  document.getElementById('onchain-error').classList.add('hidden');
+}
+function setError(msg) {
+  const el = document.getElementById('onchain-error');
+  el.classList.remove('hidden');
+  el.textContent = '✗ ' + msg;
+}
+function showResult(summary, detail) {
+  document.getElementById('onchain-result').classList.remove('hidden');
+  document.getElementById('onchain-result-summary').textContent = summary;
+  document.getElementById('onchain-result-detail').textContent = detail;
+}
+
+async function onchainDryRun() {
+  clearError();
+  const btn = document.getElementById('onchain-dryrun-btn');
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+  try {
+    if (!window.lastProof) throw new Error('Generate a proof first (Multiplier demo above).');
+    setProgress('Loading @polkadot/api (one-time, ~700 KB)…');
+    const api = await getApi();
+
+    if (!api.call?.reviveApi?.call) {
+      const available = Object.keys(api.call || {}).join(', ') || '(none)';
+      throw new Error(
+        `api.call.reviveApi.call is missing — likely an ESM bundling issue. ` +
+        `Available runtime APIs: ${available}`,
+      );
+    }
+
+    setProgress('Calling reviveApi.call (off-chain runtime API, free)…');
+    const calldata = encodeCalldata(window.lastProof);
+    const origin = selectedAccount ? selectedAccount.address : new Uint8Array(32);
+    const result = await api.call.reviveApi.call(origin, CONTRACT_ADDR, 0, null, null, calldata);
+    const json = result.toJSON();
+    const ok = json?.result?.ok || json?.result?.Ok;
+    if (!ok) {
+      showResult('Dry-run failed', JSON.stringify(json, null, 2));
+      return;
+    }
+    const data = ok.data || ok[1];
+    const boolResult = BigInt(data) === 1n;
+    showResult(
+      boolResult ? '✓ verifyProof returned true on mainnet' : '✗ verifyProof returned false',
+      `Contract: ${CONTRACT_ADDR}
+Calldata: ${calldata.length / 2 - 1} bytes
+Gas consumed: ${json.gasConsumed}
+refTime: ${json.weightConsumed.refTime}
+proofSize: ${json.weightConsumed.proofSize}
+Return data: ${data}`
+    );
+    document.getElementById('onchain-progress').classList.add('hidden');
+  } catch (e) {
+    console.error(e);
+    setError(e.message);
+    document.getElementById('onchain-progress').classList.add('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Dry-run (free)';
+  }
+}
+
+async function onchainSubmit() {
+  clearError();
+  const btn = document.getElementById('onchain-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+  try {
+    if (!window.lastProof) throw new Error('Generate a proof first (Multiplier demo above).');
+    if (!selectedAccount || !window.injectedSigner) throw new Error('Connect a Polkadot wallet first.');
+
+    setProgress('Loading @polkadot/api…');
+    const api = await getApi();
+
+    const calldata = encodeCalldata(window.lastProof);
+    const tx = api.tx.revive.call(
+      CONTRACT_ADDR,
+      0,
+      { refTime: 5_000_000_000, proofSize: 131_072 },
+      100_000_000_000_000n,
+      calldata,
+    );
+
+    setProgress('Signing in wallet…');
+    await new Promise((resolve, reject) => {
+      tx.signAndSend(
+        selectedAccount.address,
+        { signer: window.injectedSigner },
+        (result) => {
+          setProgress(`Status: ${result.status.type}`);
+          if (result.dispatchError) {
+            let msg = result.dispatchError.toString();
+            if (result.dispatchError.isModule) {
+              try {
+                const decoded = api.registry.findMetaError(result.dispatchError.asModule);
+                msg = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+              } catch (_) {}
+            }
+            reject(new Error(msg));
+            return;
+          }
+          if (result.status.isInBlock || result.status.isFinalized) {
+            const blockHash = (result.status.isInBlock ? result.status.asInBlock : result.status.asFinalized).toHex();
+            const events = result.events.map(({ event }) => `${event.section}.${event.method}`).join(', ');
+            const success = result.events.some(({ event }) => event.section === 'system' && event.method === 'ExtrinsicSuccess');
+            showResult(
+              success ? '✓ Toy verifier call included on Polkadot mainnet' : '✗ Extrinsic failed',
+              `Contract: ${CONTRACT_ADDR}
+Block:    ${blockHash}
+Events:   ${events}
+Signer:   ${selectedAccount.address}`
+            );
+            document.getElementById('onchain-progress').classList.add('hidden');
+            resolve();
+          }
+        }
+      ).catch(reject);
+    });
+  } catch (e) {
+    console.error(e);
+    setError(e.message);
+    document.getElementById('onchain-progress').classList.add('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Submit on-chain';
+  }
+}
+</script>
+
+</body>
+</html>

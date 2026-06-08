@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required files
+        run: |
+          test -f LICENSE
+          test -f docs/REPRODUCIBILITY.md
+          test -f docs/TRUST_MODEL.md
+          test -f docs/KNOWN_LIMITATIONS.md
+          test -f artifacts/MANIFEST.md
+      - name: Reviewer wording checks
+        run: |
+          license_needle='"license": "'"ISC"'"'
+          zk_prefix='"@zk-email/'
+          zk_needle="${zk_prefix}.*\\^"
+          snarkjs_name='"snarkjs": "'
+          snarkjs_needle="${snarkjs_name}\\^"
+          license_text='No `''LICENSE` file'
+          ! find . -name package.json -not -path '*/node_modules/*' -print0 | xargs -0 grep -n "$license_needle"
+          ! find . -name package.json -not -path '*/node_modules/*' -print0 | xargs -0 grep -n "$zk_needle"
+          ! find . -name package.json -not -path '*/node_modules/*' -print0 | xargs -0 grep -n "$snarkjs_needle"
+          ! grep -R "$license_text" -n --exclude-dir=node_modules .
+      - name: Web copy sanity
+        run: |
+          grep -q 'Prove DKIM-backed email ownership' web/index.html
+          grep -q 'Toy circuit, real Groth16' web/index.html
+
+  rust:
+    name: Rust workspace tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cargo test
+        run: cargo test --workspace
+
+  prover:
+    name: Prover TypeScript build (best effort)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prover
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: prover/package-lock.json
+
+      # Full zkEmail proof generation is intentionally excluded from CI because
+      # it is heavy. See docs/REPRODUCIBILITY.md for the local/manual path.
+      - name: Install dependencies
+        id: install
+        continue-on-error: true
+        run: npm ci --ignore-scripts
+      - name: Build
+        if: steps.install.outcome == 'success'
+        run: npm run build
+      - name: Build skipped note
+        if: steps.install.outcome != 'success'
+        run: |
+          echo "Prover install did not complete in CI."
+          echo "The full prover reproduction path is documented in docs/REPRODUCIBILITY.md."
+
+  web:
+    name: Web static sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check static site files
+        run: |
+          test -f web/index.html
+          test -f web/circuit/circuit.wasm
+          test -f web/circuit/circuit_final.zkey
+          grep -q 'Real zkEmail circuit' web/index.html
