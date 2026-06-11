@@ -1,6 +1,6 @@
 //! # pallet-zkattest
 //!
-//! Zero-knowledge email attestation for Polkadot Proof-of-Personhood (DIM2).
+//! Zero-knowledge email attestation source for Polkadot People / DIM evaluation.
 //!
 //! ## Overview
 //!
